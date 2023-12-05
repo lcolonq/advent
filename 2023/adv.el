@@ -86,6 +86,42 @@ Return DEF or nil if not present."
   "Lookup the number associated with K in the alist M."
   (adv/num (alist-get k m "0" nil #'equal)))
 
+;; Day 1
+(defconst adv/day1-digit-values
+  '(("0" . 0)
+    ("1" .  1) ("one" . 1)
+    ("2" .  2) ("two" . 2)
+    ("3" .  3) ("three" . 3)
+    ("4" .  4) ("four" . 4)
+    ("5" .  5) ("five" . 5)
+    ("6" .  6) ("six" . 6)
+    ("7" .  7) ("seven" . 7)
+    ("8" .  8) ("eight" . 8)
+    ("9" .  9) ("nine" . 9)))
+(defun adv/day1-find-digit (cmp line)
+  "Find a digit tehe CMP and LINE are involved somehow please guess."
+  (cdr
+   (-min-by
+    (-on cmp #'car)
+    (-filter
+     #'car
+     (apply
+      #'-concat
+      (--map
+       (-map
+        (lambda (ma) (cons (car ma) (cdr it)))
+        (s-matched-positions-all (car it) line))
+       adv/day1-digit-values))))))
+(defun adv/day1-line-value (line)
+  "Return the value for LINE :3."
+  (+
+   (* 10 (adv/day1-find-digit #'>= line))
+   (adv/day1-find-digit #'<= line)))
+(defun adv/day1 ()
+  "Solve Advent of Code 2023 Day 1."
+  (let ((lines (adv/lines "1/input.txt")))
+    (-sum (-map #'adv/day1-line-value lines))))
+
 ;; Day 2
 (defun adv/day2-parse-game (l)
   "Parse L into a game."
@@ -194,6 +230,42 @@ Return DEF or nil if not present."
          (ratios (--map (* (caadr it) (caaddr it)) gears))
          )
     (-sum ratios)))
+
+;; Day 4
+(defun adv/day4-parse-card (l)
+  "Parse L into a card."
+  (let* ((sp (s-split ": " l))
+         (idx (adv/num (s-chop-prefix "Card " (car sp))))
+         (nsp (s-split " | " (cadr sp)))
+         (winning (-map #'adv/num (-filter #'s-present? (s-split " " (car nsp)))))
+         (ours (-map #'adv/num (-filter #'s-present? (s-split " " (cadr nsp))))))
+    (list idx winning ours)))
+(defun adv/day4-part1 ()
+  "Solve day 4 part 1."
+  (let* ((lines (adv/lines "4/input.txt"))
+         (cards (-map #'adv/day4-parse-card lines))
+         (card-wins (--map (cons (car it) (-filter (lambda (our) (-contains? (cadr it) our)) (caddr it))) cards))
+         (card-values
+          (--map
+           (let ((v (length (cdr it))))
+             (cons (car it) (if (= 0 v) 0 (expt 2 (- v 1)))))
+           card-wins))
+         )
+    (-sum (-map #'cdr card-values))))
+(defun adv/day4-part2 ()
+  "Solve day 4 part 2."
+  (let* ((lines (adv/lines "4/input.txt"))
+         (cards (-map #'adv/day4-parse-card lines))
+         (card-wins (--map (cons (car it) (-filter (lambda (our) (-contains? (cadr it) our)) (caddr it))) cards))
+         (card-copies (--map (cons (car it) (adv/range (+ (car it) 1) (+ (car it) 1 (length (cdr it))))) card-wins))
+         (card-counts (ht-from-alist (--map (cons (car it) 1) card-copies))))
+    (--each card-copies
+      (let ((this-copies (ht-get card-counts (car it))))
+        (-each (cdr it)
+          (lambda (copy)
+            (let ((old (ht-get card-counts copy)))
+              (ht-set! card-counts copy (+ old this-copies)))))))
+    (-sum (ht-values card-counts))))
 
 (provide 'adv)
 ;;; adv.el ends here
