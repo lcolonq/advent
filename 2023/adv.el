@@ -6,6 +6,7 @@
 (require 's)
 (require 'ht)
 (require 'f)
+(require 'cl-lib)
 
 ;; Helpers
 (defun adv/slurp (path)
@@ -82,9 +83,14 @@ Return DEF or nil if not present."
    ((stringp x) (string-to-number (s-trim x)))
    (t (error "Failed to convert %s to a number" x))))
 
+(defun adv/s@ (k m)
+  "Lookup the value associated with K in the alist M."
+  (alist-get k m nil nil #'s-equals?))
+
 (defun adv/@num (k m)
   "Lookup the number associated with K in the alist M."
   (adv/num (alist-get k m "0" nil #'equal)))
+
 
 ;; Day 1
 (defconst adv/day1-digit-values
@@ -266,6 +272,261 @@ Return DEF or nil if not present."
             (let ((old (ht-get card-counts copy)))
               (ht-set! card-counts copy (+ old this-copies)))))))
     (-sum (ht-values card-counts))))
+
+;; Day 5
+(defun adv/day5-parse-map (str)
+  "Parse a range map from STR."
+  (let* ((lines (cdr (s-split "\n" (s-trim str))))
+         (ranges
+          (--map
+           (-map #'adv/num (s-split " " it))
+           lines)))
+    ranges))
+(defun adv/day5-lookup (x map)
+  "Lookup X in MAP."
+  (let ((range (--first (and (>= x (cadr it)) (< x (+ (cadr it) (caddr it)))) map)))
+    (if range
+        (+ (car range) (- x (cadr range)))
+      x)))
+(defun adv/day5-part1 ()
+  "Solve day 5 part 1."
+  (let* ((inp (adv/slurp "5/input.txt"))
+         (blocks (s-split "\n\n" inp))
+         (seeds (-map #'adv/num (s-split " " (s-chop-prefix "seeds: " (car blocks)))))
+         (maps (-map #'adv/day5-parse-map (cdr blocks)))
+         (stl (lambda (s) (--reduce-from (adv/day5-lookup acc it) s maps)))
+         (locations (-map stl seeds)))
+    (-min locations)))
+(defun adv/day5-range-intersection (s0 e0 s1 e1)
+  "Return a range of shared elements of S0 <= x < E0 and S1 <= x < E1."
+  (let ((start
+         (cond
+          ((and (<= s0 s1) (< s1 e0)) s1)
+          ((and (<= s1 s0) (< s0 e1)) s0)
+          (t nil)))
+        (end (min e0 e1)))
+    (when start (cons start end))))
+(defun adv/day5-range-difference (s0 e0 s1 e1)
+  "Return the difference of S0 <= x < E0 and S1 <= x < E1."
+  (cond
+   ((and (>= s0 s1) (<= e0 e1)) nil)
+   ((and (< s0 s1) (> e0 e1)) (list (cons s0 s1) (cons e1 e0)))
+   ((and (>= e0 s1) (<= e0 e1)) (list (cons s0 s1)))
+   ((and (>= s0 s1) (<= s0 e1)) (list (cons e1 e0)))
+   (t (list (cons s0 e0)))))
+(defun adv/day5-translate-range (r map)
+  "Translate R over MAP."
+  (let ((translated
+         (-non-nil
+          (-map
+           (lambda (d)
+             (let ((i (adv/day5-range-intersection
+                       (car r) (cdr r)
+                       (cadr d) (+ (cadr d) (caddr d)))))
+               (when i
+                 (cons
+                  (+ (car d) (- (car i) (cadr d)))
+                  (+ (car d) (- (cdr i) (cadr d))))))
+             )
+           map)))
+        (leftovers
+         (--reduce-from
+          (-non-nil (adv/cat (-map (lambda (l) (adv/day5-range-difference (car l) (cdr l) (cadr it) (+ (cadr it) (caddr it)))) acc)))
+          (list r)
+          map))
+        )
+    (append translated leftovers)
+    ))
+(defun adv/day5-translate-all (r maps)
+  "Translate R over MAPS."
+  (--reduce-from (adv/cat (-map (lambda (i) (adv/day5-translate-range i it)) acc)) (list r) maps))
+(defun adv/day5-part2 ()
+  "Solve day 5 part 2."
+  (let* ((inp (adv/slurp "5/input.txt"))
+         (blocks (s-split "\n\n" inp))
+         (seeds (-partition 2 (-map #'adv/num (s-split " " (s-chop-prefix "seeds: " (car blocks))))))
+         (maps (-map #'adv/day5-parse-map (cdr blocks)))
+         (locations (-non-nil (adv/cat (--map (adv/day5-translate-all (cons (car it) (+ (car it) (cadr it))) maps) seeds)))))
+    (-min (-map #'car locations))))
+
+;; Day 6
+(defun adv/day6-recordbeaters (r)
+  "Compute the recordbeating button press times for R."
+  (--filter (> it (cdr r)) (--map (* it (- (car r) it)) (-iota (car r)))))
+(defun adv/day6-part1 ()
+  "Solve day 6 part 1."
+  (let* ((inp (adv/lines "6/input.txt"))
+         (times (-map #'adv/num (s-split " " (s-trim (s-chop-prefix "Time:" (car inp))) t)))
+         (distances (-map #'adv/num (s-split " " (s-trim (s-chop-prefix "Distance:" (cadr inp))) t)))
+         (td (-zip-pair times distances))
+         (recordbeaters (-map #'adv/day6-recordbeaters td)))
+    (-reduce #'* (-map #'length recordbeaters))))
+(defun adv/day6-recordbeaters-fast (r)
+  "Compute the number of recordbeating button press times for R."
+  (let* ((b (car r))
+         (a (cdr r))
+         (bound0 (floor (/ (- b (sqrt (- (* b b) (* 4 a)))) 2)))
+         (bound1 (floor (/ (+ b (sqrt (- (* b b) (* 4 a)))) 2)))
+         (lower (min bound0 bound1))
+         (upper (max bound0 bound1)))
+    (- upper lower)))
+(defun adv/day6-part2 ()
+  "Solve day 6 part 2."
+  (let* ((inp (adv/lines "6/input.txt"))
+         (time (adv/num (s-replace " " "" (s-trim (s-chop-prefix "Time:" (car inp))))))
+         (distance (adv/num (s-replace " " "" (s-trim (s-chop-prefix "Distance:" (cadr inp)))))))
+    (adv/day6-recordbeaters-fast (cons time distance))))
+
+;; Day 7
+(defun adv/day7-card-value (c)
+  "Determine the value of a card C."
+  (cl-case c
+    (?2 2)
+    (?3 3)
+    (?4 4)
+    (?5 5)
+    (?6 6)
+    (?7 7)
+    (?8 8)
+    (?9 9)
+    (?T 10)
+    (?J 11)
+    (?Q 12)
+    (?K 13)
+    (?A 14)
+    (otherwise 0)))
+(defun adv/day7-hand-type (h)
+  "Determine the type index of a hand string H."
+  (let* ((hl (seq-into h 'list))
+         (card-indices (--map (cons it (-elem-indices it hl)) (seq-into "23456789TJQKA" 'list))))
+    (cond
+     ((= 1 (length (-uniq hl))) 7)
+     ((= 4 (-max (--map (length (cdr it)) card-indices))) 6)
+     ((= 2 (length (-uniq hl))) 5)
+     ((= 3 (-max (--map (length (cdr it)) card-indices))) 4)
+     ((= 3 (length (-uniq hl))) 3)
+     ((= 2 (-max (--map (length (cdr it)) card-indices))) 2)
+     (t 1))))
+(defun adv/day7-hand-score (h)
+  "Compute a complete score for H."
+  (+
+   (* (adv/day7-hand-type h) 10e9)
+   (* (adv/day7-card-value (seq-elt h 0)) 10e7)
+   (* (adv/day7-card-value (seq-elt h 1)) 10e5)
+   (* (adv/day7-card-value (seq-elt h 2)) 10e3)
+   (* (adv/day7-card-value (seq-elt h 3)) 10e1)
+   (adv/day7-card-value (seq-elt h 4))
+   ))
+(defun adv/day7-part1 ()
+  "Solve day 7 part 1."
+  (let* ((lines (adv/lines "7/input.txt"))
+         (handbids (--map (let ((sp (s-split " " it))) (cons (car sp) (adv/num (cadr sp)))) lines))
+         (sorted (-sort (-on #'<= (lambda (x) (adv/day7-hand-score (car x)))) handbids))
+         (valued (--map-indexed (* (cdr it) (+ it-index 1)) sorted))
+         )
+    (-sum valued)
+    ))
+(defun adv/day7-replace-jokers (h)
+  "Replace jokers in H."
+  (let* ((hl (seq-into h 'list))
+         (card-indices (--filter (not (= (car it) ?J)) (--map (cons it (length (-elem-indices it hl))) (seq-into "23456789TJQKA" 'list))))
+         (sorted-card-indices (-sort (-on #'>= #'cdr) card-indices))
+         (max-occurences (--filter (= (cdr it) (cdar sorted-card-indices)) sorted-card-indices))
+         (sorted-max (-sort (-on #'>= (lambda (x) (adv/day7-card-value (car x)))) max-occurences))
+         )
+    (s-replace "J" (format "%c" (caar sorted-max)) h)))
+(defun adv/day7-card-value-joker (c)
+  "Determine the value of a card C taking into account jokers."
+  (if (= c ?J) 1 (adv/day7-card-value c)))
+(defun adv/day7-hand-score-joker (h)
+  "Compute a complete score for H taking into account jokers."
+  (let ((hj (adv/day7-replace-jokers h)))
+    (+
+     (* (adv/day7-hand-type hj) 10e9)
+     (* (adv/day7-card-value-joker (seq-elt h 0)) 10e7)
+     (* (adv/day7-card-value-joker (seq-elt h 1)) 10e5)
+     (* (adv/day7-card-value-joker (seq-elt h 2)) 10e3)
+     (* (adv/day7-card-value-joker (seq-elt h 3)) 10e1)
+     (adv/day7-card-value-joker (seq-elt h 4))
+     )))
+(defun adv/day7-part2 ()
+  "Solve day 7 part 2."
+  (let* ((lines (adv/lines "7/input.txt"))
+         (handbids (--map (let ((sp (s-split " " it))) (cons (car sp) (adv/num (cadr sp)))) lines))
+         (sorted (-sort (-on #'<= (lambda (x) (adv/day7-hand-score-joker (car x)))) handbids))
+         (valued (--map-indexed (* (cdr it) (+ it-index 1)) sorted))
+         )
+    (-sum valued)
+    ))
+
+;; Day 8
+(defun adv/day8-count-steps (ins nodes cur)
+  "Walk INS over NODES from CUR."
+  (let ((ret 0))
+    (while (not (s-equals? cur "ZZZ"))
+      (cond
+       ((= (car ins) ?L)
+        (setf ins (append (cdr ins) (list (car ins))))
+        (setf cur (car (adv/s@ cur nodes)))
+        (cl-incf ret))
+       ((= (car ins) ?R)
+        (setf ins (append (cdr ins) (list (car ins))))
+        (setf cur (cdr (adv/s@ cur nodes)))
+        (cl-incf ret))))
+    ret))
+(defun adv/day8-part1 ()
+  "Solve day 8 part 1."
+  (let* ((lines (adv/lines "8/input.txt"))
+         (instructions (seq-into (car lines) 'list))
+         (nodes
+          (--map
+           (let* ((sp (s-split " = " (s-replace-all '(("(" . "") (")" . "")) it)))
+                  (node (s-trim (car sp)))
+                  (spe (s-split ", " (cadr sp)))
+                  (edges (cons (car spe) (cadr spe))))
+             (cons node edges))
+           (cdr lines)
+           )))
+    (adv/day8-count-steps instructions nodes "AAA")
+    ))
+(defun adv/day8-one-step (ins nodes cur)
+  "Walk one INS over NODES from CUR."
+  (cond
+   ((= ins ?L)
+    (car (adv/s@ cur nodes)))
+   ((= ins ?R)
+    (cdr (adv/s@ cur nodes)))))
+(defun adv/day8-walk-all (ins nodes allcur)
+  "Walk INS over NODES from ALLCUR."
+  (let ((ret 0)
+        (arr (apply #'vector allcur))
+        (all (seq-map (lambda (_) nil) (apply #'vector allcur))))
+    (while (not (--all? it (seq-into all 'list)))
+      (let ((sel (cond ((= (car ins) ?L) #'car) ((= (car ins) ?R) #'cdr))))
+        (seq-do-indexed
+         (lambda (x idx)
+           (when (and (= (seq-elt x 2) ?Z) (not (seq-elt all idx)))
+             (setf (seq-elt all idx) ret))
+           (setf (seq-elt arr idx) (funcall sel (adv/s@ x nodes))))
+         arr)
+        (setf ins (append (cdr ins) (list (car ins))))
+        (cl-incf ret)))
+    (apply #'cl-lcm (seq-into all 'list))))
+(defun adv/day8-part2 ()
+  "Solve day 8 part 2."
+  (let* ((lines (adv/lines "8/input.txt"))
+         (instructions (seq-into (car lines) 'list))
+         (nodes
+          (--map
+           (let* ((sp (s-split " = " (s-replace-all '(("(" . "") (")" . "")) it)))
+                  (node (s-trim (car sp)))
+                  (spe (s-split ", " (cadr sp)))
+                  (edges (cons (car spe) (cadr spe))))
+             (cons node edges))
+           (cdr lines)
+           )))
+    (adv/day8-walk-all instructions nodes (-map #'car (--filter (= (seq-elt (car it) 2) ?A) nodes)))
+    ))
 
 (provide 'adv)
 ;;; adv.el ends here
