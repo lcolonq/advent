@@ -33,6 +33,15 @@
    ((sequencep xs) (seq-elt xs i))
    (t nil)))
 
+(defun adv/all-adjacent (c)
+  "Return all of the points adjacent to C."
+  (let ((x (car c))
+        (y (cdr c)))
+    (list
+     (cons (- x 1) y)
+     (cons (+ x 1) y)
+     (cons x (- y 1))
+     (cons x (+ y 1)))))
 (defun adv/adjacent (c1 c2)
   "Return non-nil if coordinates C1 are adjacent to C2."
   (let ((x1 (car c1)) (y1 (cdr c1))
@@ -42,7 +51,6 @@
      (<= x2 (+ x1 1))
      (>= y2 (- y1 1))
      (<= y2 (+ y1 1)))))
-        
 
 (defun adv/grid (path)
   "Read PATH and return a grid of characters."
@@ -50,6 +58,10 @@
          (h (length lines))
          (w (-max (-map #'length lines))))
     (list w h lines)))
+(defun adv/g-clone (g)
+  "Copy G."
+  (let ((lines (-map #'copy-sequence (caddr g))))
+    (list (car g) (cadr g) lines)))
 (defun adv/g-w (g) "Return the width of G." (car g))
 (defun adv/g-h (g) "Return the height of G." (cadr g))
 (defun adv/g-str (g) "Return the contents of G." (caddr g))
@@ -57,9 +69,28 @@
   "Retrieve the character at X, Y in G.
 Return DEF or nil if not present."
   (cond
+   ((< x 0) def)
+   ((< y 0) def)
    ((>= x (adv/g-w g)) def)
    ((>= y (adv/g-h g)) def)
    (t (or (adv/@ x (adv/@ y (adv/g-str g))) def))))
+(defun adv/g-set (g x y val)
+  "Set the character at X, Y in G to VAL."
+  (cond
+   ((< x 0) nil)
+   ((< y 0) nil)
+   ((>= x (adv/g-w g)) nil)
+   ((>= y (adv/g-h g)) nil)
+   (t (setf (seq-elt (seq-elt (adv/g-str g) y) x) val))))
+(defun adv/g-inbounds (g coords)
+  "Return non-nil if COORDS are in-bounds in G."
+  (let ((x (car coords))
+        (y (cdr coords)))
+    (and
+     (>= x 0)
+     (< x (adv/g-w g))
+     (>= y 0)
+     (< y (adv/g-h g)))))
 (defun adv/g-xy (g coords &optional def)
   "Retrieve the character at COORDS in G.
 Return DEF or nil if not present."
@@ -162,7 +193,7 @@ Return DEF or nil if not present."
          (games (-map #'adv/day2-parse-game lines)))
     (-sum (-map #'adv/day2-game-power games))))
 
-;; Day3
+;; Day 3
 (defun adv/day3-symbol-coords (g)
   "Return the coordinates of all symbols in G."
   (-non-nil
@@ -527,6 +558,273 @@ Return DEF or nil if not present."
            )))
     (adv/day8-walk-all instructions nodes (-map #'car (--filter (= (seq-elt (car it) 2) ?A) nodes)))
     ))
+
+;; Day 9
+(defun adv/day9-seq-diffs (seq)
+  "Return the difference between each element of SEQ."
+  (cond
+   ((and (car seq) (cadr seq)) (cons (- (cadr seq) (car seq)) (adv/day9-seq-diffs (cdr seq))))
+   (t nil)))
+(defun adv/day9-seq-done (seq)
+  "Return non-nil if SEQ is all zeroes."
+  (--all? (= it 0) seq))
+(defun adv/day9-explode-seq (seq)
+  "Explode SEQ."
+  (let ((ret (list seq)))
+    (while (not (adv/day9-seq-done (car ret)))
+      (push (adv/day9-seq-diffs (car ret)) ret))
+    ret))
+(defun adv/day9-extrapolate (seqs)
+  "Sum all of the last elements of SEQS."
+  (-sum (-map #'-last-item seqs)))
+(defun adv/day9-extrapolate-backwards (seqs)
+  "Difference all of the first elements of SEQS."
+  (--reduce (- it acc) (-map #'car seqs)))
+(defun adv/day9-part1 ()
+  "Solve day 9 part 1."
+  (let* ((lines (adv/lines "9/input.txt"))
+         (seqs (--map (-map #'adv/num (s-split " " it)) lines))
+         (exploded (-map #'adv/day9-explode-seq seqs))
+         (extrapolated (-map #'adv/day9-extrapolate exploded)))
+    (-sum extrapolated)))
+(defun adv/day9-part2 ()
+  "Solve day 9 part 2."
+  (let* ((lines (adv/lines "9/input.txt"))
+         (seqs (--map (-map #'adv/num (s-split " " it)) lines))
+         (exploded (-map #'adv/day9-explode-seq seqs))
+         (extrapolated (-map #'adv/day9-extrapolate-backwards exploded)))
+    (-sum extrapolated)))
+
+;; Day 10 - pretty scuffed, I guessed a bit
+(defun adv/day10-start (grid)
+  "Return the coordinates of S in GRID."
+  (car
+   (-non-nil
+    (adv/cat
+     (-map
+      (lambda (x)
+        (-map
+         (lambda (y)
+           (when (equal ?S (adv/g grid x y))
+             (cons x y)))
+         (-iota (adv/g-h grid))))
+      (-iota (adv/g-w grid)))))))
+(defun adv/day10-connected (grid c)
+  "Return the coordinates of all cells connected to C on GRID."
+  (let ((x (car c))
+        (y (cdr c)))
+    (cl-case (adv/g-xy grid c)
+      (?| (list (cons x (- y 1)) (cons x (+ y 1))))
+      (?- (list (cons (- x 1) y) (cons (+ x 1) y)))
+      (?L (list (cons x (- y 1)) (cons (+ x 1) y)))
+      (?J (list (cons (- x 1) y) (cons x (- y 1))))
+      (?7 (list (cons (- x 1) y) (cons x (+ y 1))))
+      (?F (list (cons x (+ y 1)) (cons (+ x 1) y)))
+      (?S
+       (--filter
+        (and
+         (adv/g-inbounds grid it)
+         (-contains? (adv/day10-connected grid it) c))
+        (list
+         (cons (- x 1) y)
+         (cons (+ x 1) y)
+         (cons x (- y 1))
+         (cons x (+ y 1)))))
+      (t nil))))
+(defun adv/day10-build-graph (grid start)
+  "Construct a graph of the loop on GRID from START."
+  (let ((queue (list start))
+        (ret nil)
+        (covered nil))
+    (while (car queue)
+      (let ((conn (adv/day10-connected grid (car queue))))
+        (push (cons (car queue) conn) ret)
+        (push (car queue) covered)
+        (setq queue (cdr queue))
+        (--each conn
+          (unless (or (-contains? queue it) (-contains? covered it))
+            (push it queue)))))
+    ret))
+(defun adv/day10-bfs (graph start)
+  "Return an alist mappign each node in GRAPH to its distance from START."
+  (let ((queue (list start))
+        (distances (--map (cons (car it) nil) graph)))
+    (setf (alist-get start distances nil nil #'equal) 0)
+    (while (car queue)
+      (let ((e (car queue)))
+        (setq queue (cdr queue))
+        (--each (alist-get e graph nil nil #'equal)
+          (unless (alist-get it distances nil nil #'equal)
+            (setf
+             (alist-get it distances nil nil #'equal)
+             (+ 1 (alist-get e distances nil nil #'equal)))
+            (setq queue (append queue (list it)))))))
+    distances
+    ))
+(defun adv/day10-right-of (prev cur)
+  "Return the point to the left of CUR, assuming the previous point PREV."
+  (let ((dx (- (car cur) (car prev)))
+        (dy (- (cdr cur) (cdr prev))))
+    (cons (- (car cur) dy) (+ (cdr cur) dx))))
+(defun adv/day10-walk-clockwise (graph start)
+  "Walk the path of GRID and GRAPH from START clockwise.
+Return the list of nodes visited in order."
+  (let ((ret (list start))
+        (next (adv/day10-cw-from graph start)))
+    (while (not (-contains? ret next))
+      (let* ((conns (alist-get next graph nil nil #'equal))
+             (other (car (--filter (not (equal (car ret) it)) conns))))
+        (push next ret)
+        (setq next other)))
+    (reverse ret)))
+(defun adv/day10-flood (grid walls starting)
+  "Flood fill from STARTING on GRID, bounded by WALLS."
+  (let ((queue starting)
+        (visited starting))
+    (while (car queue)
+      (let ((e (car queue)))
+        (setq queue (cdr queue))
+        (--each
+            (--filter
+             (and
+              (>= (car it) 0)
+              (>= (cdr it) 0)
+              (< (car it) (adv/g-w grid))
+              (< (cdr it) (adv/g-h grid))
+              (not (-contains? walls it)))
+             (adv/all-adjacent e))
+          (unless (-contains? visited it)
+            (push it visited)
+            (setq queue (append queue (list it)))))))
+    visited))
+(defun adv/day10-indicate-points (grid points &optional char)
+  "Indicate POINTS on GRID with CHAR."
+  (let ((g (adv/g-clone grid)))
+    (--each points
+      (adv/g-set g (car it) (cdr it) (or char ?#)))
+    g))
+(defun adv/day10-part1 ()
+  "Solve day 10 part 1."
+  (let* ((grid (adv/grid "10/input.txt"))
+         (start (adv/day10-start grid))
+         (graph (adv/day10-build-graph grid start))
+         (distances (adv/day10-bfs graph start))
+         )
+    (-max (-map #'cdr distances))
+    ))
+(defun adv/day10-cw-from (graph p)
+  "Return the point proceeding clockwise from P on GRID and GRAPH."
+  (let* ((conns (alist-get p graph nil nil #'equal)))
+    (cadr conns)))
+(defun adv/day10-part2 ()
+  "Solve day 10 part 2."
+  (let* ((grid (adv/grid "10/input.txt"))
+         (start (adv/day10-start grid))
+         (graph (adv/day10-build-graph grid start))
+         (path (adv/day10-walk-clockwise graph start))
+         (right (--map (adv/day10-right-of (car it) (cdr it)) (-zip-pair path (append (cdr path) (list start)))))
+         (seeds (-difference right path))
+         (grown (adv/day10-flood grid path seeds))
+         )
+    (adv/g-print (adv/day10-indicate-points grid grown))
+    (length grown)
+    ))
+
+;; Day 11
+(defun adv/day11-expand-rows (rows)
+  "Expand ROWS."
+  (adv/cat
+   (--map
+    (if (-all? (lambda (c) (= c ?.)) it)
+        (list it it)
+      (list it))
+    rows)))
+(defun adv/day11-expand-columns (rows)
+  "Expand columns in ROWS."
+  (apply
+   #'-zip-lists
+   (adv/cat
+    (--map
+     (if (-all? (lambda (c) (= c ?.)) it)
+         (list it it)
+       (list it))
+     (apply #'-zip-lists rows)))))
+(defun adv/day11-pairs (xs)
+  "Return all of the unique pairs from elements in XS."
+  (if (car xs)
+      (append (--map (cons (car xs) it) (cdr xs)) (adv/day11-pairs (cdr xs)))
+    nil))
+(defun adv/day11-distance (p1 p2)
+  "Return the Manhattan distance between P1 and P2."
+  (let ((dx (- (car p1) (car p2)))
+        (dy (- (cdr p1) (cdr p2))))
+    (+ (abs dx) (abs dy))))
+(defun adv/day11-part1 ()
+  "Solve day 11 part 1."
+  (let* ((grid (adv/grid "11/input.txt"))
+         (rows
+          (adv/day11-expand-columns
+           (adv/day11-expand-rows
+            (--map
+             (seq-into it 'list)
+             (adv/g-str grid)))))
+         (galaxies
+          (-non-nil
+           (adv/cat
+            (-map-indexed
+             (lambda (y row)
+               (-map-indexed
+                (lambda (x c)
+                  (if (= c ?#)
+                      (cons x y)
+                    nil)
+                  )
+                row))
+             rows))))
+         )
+    (-sum (--map (adv/day11-distance (car it) (cdr it)) (adv/day11-pairs galaxies)))))
+(defun adv/day11-find-rows (rows)
+  "Return the indices of the empty ROWS."
+  (-non-nil
+   (--map-indexed
+    (when (-all? (lambda (c) (= c ?.)) it)
+      it-index)
+    rows)))
+(defun adv/day11-find-columns (rows)
+  "Return the indices of the empty columns in ROWS."
+  (-non-nil
+   (--map-indexed
+    (when (-all? (lambda (c) (= c ?.)) it)
+      it-index)
+    (apply #'-zip-lists rows))))
+(defun adv/day11-convert-point (rows cols p)
+  "Convert P given expanded ROWS and COLS."
+  (let ((factor (- 1000000 1)))
+    (cons
+     (+ (car p) (* factor (length (--filter (< it (car p)) cols))))
+     (+ (cdr p) (* factor (length (--filter (< it (cdr p)) rows)))))))
+(defun adv/day11-part2 ()
+  "Solve day 11 part 2."
+  (let* ((grid (adv/grid "11/input.txt"))
+         (g (--map (seq-into it 'list) (adv/g-str grid)))
+         (rows (adv/day11-find-rows g))
+         (cols (adv/day11-find-columns g))
+         (galaxies-raw
+          (-non-nil
+           (adv/cat
+            (-map-indexed
+             (lambda (y row)
+               (-map-indexed
+                (lambda (x c)
+                  (if (= c ?#)
+                      (cons x y)
+                    nil)
+                  )
+                row))
+             g))))
+         (galaxies (--map (adv/day11-convert-point rows cols it) galaxies-raw))
+         )
+    (-sum (--map (adv/day11-distance (car it) (cdr it)) (adv/day11-pairs galaxies)))))
 
 (provide 'adv)
 ;;; adv.el ends here
