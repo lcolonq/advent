@@ -75,6 +75,15 @@
       [(cons [C|(dir-cw Dir)] 1000)
        (cons [C|(dir-ccw Dir)] 1000)])
      (value *graph*))))
+(define add-node-inv [C|Dir] ->
+  (let New (vec-add C (dir-offset (dir-cw (dir-cw Dir))))
+    (put
+     [C|Dir] edges-inv
+     (append
+      (if (not (map-lookup New)) [(cons [New|Dir] 1)] [])
+      [(cons [C|(dir-cw Dir)] 1000)
+       (cons [C|(dir-ccw Dir)] 1000)])
+     (value *graph*))))
 
 (define mapcat
   _ [] -> []
@@ -95,6 +104,7 @@
   _ [] -> done
   F [X|XS] -> (do (F X) (mapc F XS)))
 (mapc (fn add-node) (value *all-nodes*))
+(mapc (fn add-node-inv) (value *all-nodes*))
 "populated graph!"
 
 (define visited? C -> (trap-error (get C visited (value *graph*)) (lambda _ false)))
@@ -108,6 +118,7 @@
   Acc [] -> Acc)
 (define pick-closest Dists -> (pick-closest-helper [[-1|-1]|-1] Dists))
 (define neighbors C -> (get C edges (value *graph*)))
+(define neighbors-inv C -> (get C edges-inv (value *graph*)))
 (define maybe-update BaseDist Neighbors [C | Dist] ->
   (let N (assoc C Neighbors)
     (if (empty? N)
@@ -117,20 +128,16 @@
               [(hd N) | New]
               [C | Dist])))))
 (print hi) (nl)
-(define search-helper S E Dists ->
+(define search-helper Dists ->
   (let Close (pick-closest Dists)
-    (do
-     (print Close) (nl)
-     (if (= (tl Close) -1)
-         Dists
-         (let Neighbors (neighbors (hd Close))
-           (do
-            (set-visited (hd Close))
-            (search-helper S E (map (maybe-update (tl Close) Neighbors) Dists))))))))
+    (if (= (tl Close) -1)
+        Dists
+        (let Neighbors (neighbors (hd Close))
+          (do
+           (set-visited (hd Close))
+           (search-helper (map (maybe-update (tl Close) Neighbors) Dists)))))))
 (define search ->
   (search-helper
-   (value *start*)
-   (value *end*)
    (map
     (lambda C
       (if (= C [(value *start*)|east])
@@ -140,42 +147,18 @@
 (set *distances* (search))
 "searched graph!"
 
+(define get-distance C -> (tl (assoc C (value *distances*))))
 (define shortest-to-end-helper
   Acc [] -> Acc
   Acc [Dir | Dirs] ->
   (let Res (assoc (cons (value *end*) Dir) (value *distances*))
     (if (empty? Res)
         (shortest-to-end-helper Acc Dirs)
-        (if (or (= Acc -1) (< (tl Res) Acc))
-            (shortest-to-end-helper (tl Res) Dirs)
+        (if (or (= (hd Acc) -1) (< (tl Res) (hd Acc)))
+            (shortest-to-end-helper (cons (tl Res) Dir) Dirs)
             (shortest-to-end-helper Acc Dirs)))))
-(define shortest-to-end -> (shortest-to-end-helper -1 [north south west east]))
-
+(define shortest-to-end -> (shortest-to-end-helper [-1|north] [north south west east]))
 (define filter _ [] -> [] F [X|XS] -> (if (F X) (cons X (filter F XS)) (filter F XS)))
-  
-(define label-best-path
-  0 _ -> done
-  _ [] -> lost
-  V Frontier ->
-  (do
-   (print V)
-   (mapc
-    (lambda C
-      (put (hd C) best true (value *map*)))
-    Frontier)
-   (let New (mapcat (lambda N (map (fn hd) (neighbors N))) Frontier)
-     (do
-      (print New) (nl)
-      (label-best-path
-       (- V 1)
-       (filter
-        (lambda C
-          (let Res (tl (assoc C (value *distances*)))
-            (do
-             (print Res) (nl)
-             (or (= (- V 1) Res) (= (- V 1000) Res)))))
-        New))))))
-(label-best-path (shortest-to-end) [[(value *end*)|south]])
 
 (define sum-best ->
   (sum
@@ -183,3 +166,31 @@
     (lambda C
       (if (trap-error (get C best (value *map*)) (lambda _ false)) 1 0))
     (mapcat (lambda X (map (lambda Y [X|Y]) (iota (value *height*)))) (iota (value *width*))))))
+
+(define label-best-path
+  [] -> done
+  Frontier ->
+  (do
+   (mapc (lambda C (put (hd C) best true (value *map*))) Frontier)
+   (label-best-path
+     (mapcat
+      (lambda C
+        (let CDist (get-distance C)
+          (filter
+           (lambda N
+             (let Dist (get-distance N)
+               (do
+                (print Dist) (nl)
+                (if (or (= (tl N) (dir-cw (tl C))) (= (tl N) (dir-ccw (tl C))))
+                    (= Dist (- CDist 1000))
+                    (= Dist (- CDist 1))))))
+           (map
+            (fn hd)
+            (neighbors-inv C)))))
+      Frontier))))
+
+(label-best-path [[(value *end*)|(tl (shortest-to-end))]])
+\*
+< 686
+> 600
+*\
