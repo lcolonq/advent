@@ -35,6 +35,10 @@
         dir = ./../2024/19;
         srcs = [ "src" ];
       };
+      hy-python = pkgs.python3.withPackages (ppkgs: [
+        ppkgs.networkx
+        ppkgs.hy
+      ]);
     in {
       devShells.x86_64-linux.default = pkgs.mkShell {
         buildInputs = runtime ++ [
@@ -54,6 +58,7 @@
           (purescript.command {})
           ps-tools.for-0_15.purescript-language-server
           purs-nix.purescript
+          hy-python
         ];
         FACTOR_ROOT = "${pkgs.factor-lang}";
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtime;
