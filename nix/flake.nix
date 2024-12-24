@@ -59,6 +59,9 @@
           ps-tools.for-0_15.purescript-language-server
           purs-nix.purescript
           hy-python
+          pkgs.rust-analyzer
+          pkgs.rustc
+          pkgs.cargo
         ];
         FACTOR_ROOT = "${pkgs.factor-lang}";
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtime;
