@@ -39,6 +39,26 @@
         ppkgs.networkx
         ppkgs.hy
       ]);
+      haskellPackages = pkgs.haskell.packages.ghc94;
+      ghc = haskellPackages.ghcWithPackages (hpkgs: with hpkgs; [
+        base
+        base64
+        binary
+        bytestring
+        containers
+        directory
+        errors
+        filepath
+        lens
+        megaparsec
+        mtl
+        safe-exceptions
+        text
+        time
+        transformers
+        unordered-containers
+        vector
+      ]);
     in {
       devShells.x86_64-linux.default = pkgs.mkShell {
         buildInputs = runtime ++ [
@@ -62,6 +82,9 @@
           pkgs.rust-analyzer
           pkgs.rustc
           pkgs.cargo
+          pkgs.sbcl
+          ghc
+          haskellPackages.haskell-language-server
         ];
         FACTOR_ROOT = "${pkgs.factor-lang}";
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtime;
